@@ -1,75 +1,58 @@
-import os
 import asyncio
 import httpx
+import time
+import json
+import os
 from typing import Any
-from mcp.server import Server, NotificationOptions
-from mcp.server.models import InitializationOptions
-import mcp.types as types
-from mcp.server.stdio import stdio_server
+from starlette.applications import Starlette
+from starlette.routing import Route
+from starlette.responses import JSONResponse, StreamingResponse
+import uvicorn
 
-# --- SOVEREIGN SPECIFICATION CROSS-REFERENCE ---
-# Master Spec §10.1: LLM Gateway Specifications
-# Addendum A §A2.2: Tool Definition (llm_complete)
-# Addendum A §A2.3: Gateway Enforcement Logic (HITL Tiers)
+# --- CONFIGURATION (Loading from Environment) ---
+# This keeps your Tailscale IPs out of GitHub
+NODE_1_IP = os.getenv("NODE_1_IP", "127.0.0.1") 
+GATEWAY_IP = os.getenv("GATEWAY_IP", "0.0.0.0")
+PORT = int(os.getenv("PORT", 8090))
 
-server = Server("sovereign-llm-gateway")
+OLLAMA_URL = f"http://{NODE_1_IP}:11434/api/generate"
 
-# Mock HITL Policy - In production, this loads from config/tool_access_policy.yaml
-TIER_1_ACTIONS = ["financial", "publish", "write"]
+async def ollama_stream_generator(model: str, prompt: str):
+    async with httpx.AsyncClient(timeout=120.0) as client:
+        payload = {"model": model, "prompt": prompt, "stream": True}
+        async with client.stream("POST", OLLAMA_URL, json=payload) as response:
+            async for line in response.aiter_lines():
+                if not line: continue
+                chunk = json.loads(line)
+                token = chunk.get("response", "")
+                data = {"choices": [{"delta": {"content": token}, "finish_reason": None if not chunk.get("done") else "stop"}]}
+                yield f"data: {json.dumps(data)}\n\n"
+            yield "data: [DONE]\n\n"
 
-@server.list_tools()
-async def handle_list_tools() -> list[types.Tool]:
-    return [
-        types.Tool(
-            name="llm_complete",
-            description="Submit a completion request to Ollama with Sovereign HITL gating.",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "agent_id": {"type": "string"},
-                    "model": {"type": "string"},
-                    "prompt": {"type": "string"},
-                    "action_type": {"type": "string", "enum": ["classify", "summarise", "plan", "write", "publish", "financial"]},
-                    "correlation_id": {"type": "string"}
-                },
-                "required": ["agent_id", "model", "prompt", "action_type", "correlation_id"]
-            },
-        )
-    ]
+def extract_text_content(content):
+    if isinstance(content, str): return content
+    if isinstance(content, list):
+        return " ".join([item.get("text", "") for item in content if isinstance(item, dict)])
+    return str(content)
 
-@server.call_tool()
-async def handle_call_tool(name: str, arguments: dict[str, Any] | None) -> list[types.TextContent]:
-    if not arguments or name != "llm_complete":
-        raise ValueError("Invalid tool or arguments")
+async def list_models(request):
+    return JSONResponse({"object": "list", "data": [{"id": "llama3.1:8b", "object": "model"}]})
 
-    agent_id = arguments.get("agent_id")
-    action_type = arguments.get("action_type")
-    correlation_id = arguments.get("correlation_id")
+async def openai_compat(request):
+    data = await request.json()
+    messages = data.get("messages", [])
+    raw_content = messages[-1].get("content", "") if messages else "Hello"
+    prompt = extract_text_content(raw_content)
+    model = data.get("model", "llama3.1:8b")
+    print(f"--- Streaming Request (Env: {NODE_1_IP}) ---")
+    return StreamingResponse(ollama_stream_generator(model, prompt), media_type="text/event-stream")
 
-    # --- INVARIANT ENFORCEMENT: HITL TIER CHECK (MCP-INV-02) ---
-    # Per Addendum A §A2.3: If Tier 1, check for approval before proxying.
-    if action_type in TIER_1_ACTIONS:
-        # Here, the gateway would check PostgreSQL for a 'hitl_approved' record
-        return [types.TextContent(
-            type="text", 
-            text=f"HITL_GATE: Action '{action_type}' requires approval. Request {correlation_id} submitted to Telegram."
-        )]
-
-    # --- SECURE PROXY TO NODE 1 (OLLAMA) ---
-    # Only reachable if Tier 0 or Tier 1 is already approved.
-    # Replace with your actual Node 1 Tailscale IP in production
-    # async with httpx.AsyncClient() as client:
-    #     resp = await client.post("http://node-1-ip:11434/api/generate", json=...)
-    
-    return [types.TextContent(type="text", text=f"SUCCESS: Autonomous execution for {action_type}. Prompt proxied to Node 1.")]
-
-async def main():
-    async with stdio_server() as (read_stream, write_stream):
-        await server.run(read_stream, write_stream, InitializationOptions(
-            server_name="sovereign-llm-gateway",
-            server_version="0.1.0",
-            capabilities=server.get_capabilities(),
-        ))
+app = Starlette(
+    routes=[
+        Route("/v1/models", endpoint=list_models, methods=["GET"]),
+        Route("/v1/chat/completions", endpoint=openai_compat, methods=["POST"]),
+    ],
+)
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    uvicorn.run(app, host=GATEWAY_IP, port=PORT)
