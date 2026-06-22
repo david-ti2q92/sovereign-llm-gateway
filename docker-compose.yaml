@@ -1,0 +1,25 @@
+services:
+  llm-gateway:
+    image: python:3.12-slim
+    container_name: llm-gateway
+    volumes:
+      - .:/app
+    working_dir: /app
+    # Docker automatically looks for a .env file in the same directory
+    environment:
+      - GATEWAY_AUTH_TOKEN=${GATEWAY_AUTH_TOKEN}
+      - NODE_1_IP=${NODE_1_IP}
+      - GATEWAY_IP=${GATEWAY_IP}
+      - PORT=${PORT}
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://${NODE_1_IP}:11434}
+      - MCP_BACKEND_URL=${MCP_BACKEND_URL:-http://${NODE_1_IP}:9000/mcp/tools/invoke}
+      - OPENAI_MODELS_BACKEND_URL=${OPENAI_MODELS_BACKEND_URL:-http://${NODE_1_IP}:11434/v1/models}
+      - OPENAI_CHAT_BACKEND_URL=${OPENAI_CHAT_BACKEND_URL:-http://${NODE_1_IP}:11434/v1/chat/completions}
+      - OPENAI_EMBEDDINGS_BACKEND_URL=${OPENAI_EMBEDDINGS_BACKEND_URL:-http://${NODE_1_IP}:11434/v1/embeddings}
+      - TOOL_ACCESS_POLICY_PATH=/app/config/tool_access_policy.yaml
+      - PYTHONPATH=/app/.venv/lib/python3.12/site-packages
+    ports:
+      - "${GATEWAY_BIND_HOST}:${PORT}:${PORT}"
+    command: >
+      sh -c "python -m pip install --disable-pip-version-check --no-input PyYAML >/dev/null 2>&1 || true; python main.py"
+    restart: unless-stopped

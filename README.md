@@ -14,3 +14,9 @@ It sits on **Node 2A (Data Plane)** and intercepts all requests to the LLM (Node
 - **Protocol:** Model Context Protocol (MCP)
 - **Runtime:** Python / MCP SDK
 - **Backend:** Proxies to Ollama (Node 1) via Tailscale
+
+## MCP Transport
+- Canonical SSE endpoint: `/mcp`
+- Legacy SSE alias: `/sse`
+- Message endpoint is discovered from the SSE `endpoint` event and includes a required `session_id` query parameter.
+- Direct POSTs to `/messages` or `/mcp/messages` without the `session_id` returned by the SSE handshake are rejected with HTTP 400 by the MCP SDK.
