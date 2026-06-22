@@ -1,0 +1,26 @@
+version: "1.0"
+agents:
+  agent-hermes:
+    tools:
+      - llm_complete
+      - llm_list_models
+      - hitl_submit
+      - hitl_check
+  agent-openhuman:
+    tools:
+      - llm_complete
+      - llm_list_models
+      - hitl_submit
+      - hitl_check
+  agent-openclaw:
+    tools:
+      - llm_complete
+      - llm_list_models
+      - hitl_submit
+      - hitl_check
+  claude-code:
+    tools:
+      - llm_complete
+      - llm_list_models
+      - hitl_submit
+      - hitl_check
