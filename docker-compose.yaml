@@ -21,7 +21,7 @@ services:
       - TOOL_ACCESS_POLICY_PATH=/app/config/tool_access_policy.yaml
       - PYTHONPATH=/app/.venv/lib/python3.12/site-packages
     ports:
-      - "${GATEWAY_BIND_HOST}:${PORT}:${PORT}"
+      - "100.75.87.51:8090:8090"
     command: >
       sh -c "python -m pip install --disable-pip-version-check --no-input PyYAML >/dev/null 2>&1 || true; python main.py"
     restart: unless-stopped
