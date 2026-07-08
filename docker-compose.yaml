@@ -8,7 +8,9 @@ services:
     # Docker automatically looks for a .env file in the same directory
     environment:
       - GATEWAY_AUTH_TOKEN=${GATEWAY_AUTH_TOKEN}
+      - MINT_MASTER_SECRET=${MINT_MASTER_SECRET}
       - NODE_1_IP=${NODE_1_IP}
+      - GATEWAY_HOST=${GATEWAY_HOST:-0.0.0.0}
       - GATEWAY_IP=${GATEWAY_IP}
       - PORT=${PORT}
       - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://${NODE_1_IP}:11434}
